@@ -43,6 +43,10 @@ const words = [
 
 let draggedLabel = null
 let draggedEditorLabel = null
+let touchStartX = 0
+let touchStartY = 0
+let touchedLabel = null
+let touchClone = null
 
 // Initialize labels
 const labelsContainer = document.querySelector('.labels-container')
@@ -53,6 +57,9 @@ words.forEach(word => {
     label.textContent = word
     label.addEventListener('dragstart', handleDragStart)
     label.addEventListener('dragend', handleDragEnd)
+    label.addEventListener('touchstart', handleTouchStart)
+    label.addEventListener('touchmove', handleTouchMove)
+    label.addEventListener('touchend', handleTouchEnd)
     labelsContainer.appendChild(label)
 })
 
@@ -101,6 +108,119 @@ function handleDragEnd(e) {
         draggedLabel = null
         draggedEditorLabel = null
     }, 50)
+}
+
+function handleTouchStart(e) {
+    const touch = e.touches[0]
+    touchStartX = touch.clientX
+    touchStartY = touch.clientY
+    touchedLabel = e.target
+
+    // Create clone for visual feedback
+    touchClone = e.target.cloneNode(true)
+    touchClone.id = 'dragging-clone'
+    touchClone.style.position = 'fixed'
+    touchClone.style.left = touchStartX - e.target.offsetWidth / 2 + 'px'
+    touchClone.style.top = touchStartY - e.target.offsetHeight / 2 + 'px'
+    touchClone.style.pointerEvents = 'none'
+    document.body.appendChild(touchClone)
+
+    e.target.classList.add('dragging')
+    e.preventDefault() // Prevent scrolling while dragging
+}
+
+function handleTouchMove(e) {
+    if (!touchedLabel) return
+
+    const touch = e.touches[0]
+    const deltaX = touch.clientX - touchStartX
+    const deltaY = touch.clientY - touchStartY
+
+    if (touchClone) {
+        touchClone.style.left = touch.clientX - touchedLabel.offsetWidth / 2 + 'px'
+        touchClone.style.top = touch.clientY - touchedLabel.offsetHeight / 2 + 'px'
+    }
+
+    // Check if over trash zone
+    const trashRect = trashZone.getBoundingClientRect()
+    if (touch.clientX >= trashRect.left &&
+        touch.clientX <= trashRect.right &&
+        touch.clientY >= trashRect.top &&
+        touch.clientY <= trashRect.bottom) {
+        trashZone.classList.add('trash-hover')
+    } else {
+        trashZone.classList.remove('trash-hover')
+    }
+
+    e.preventDefault() // Prevent scrolling while dragging
+}
+
+function handleTouchEnd(e) {
+    if (!touchedLabel) return
+
+    const touch = e.changedTouches[0]
+    const trashRect = trashZone.getBoundingClientRect()
+
+    // Clean up clone
+    if (touchClone) {
+        touchClone.remove()
+        touchClone = null
+    }
+
+    // Check if dropped on trash
+    if (touch.clientX >= trashRect.left &&
+        touch.clientX <= trashRect.right &&
+        touch.clientY >= trashRect.top &&
+        touch.clientY <= trashRect.bottom) {
+        if (draggedEditorLabel) {
+            const pos = editor.view.posAtDOM(draggedEditorLabel, 0)
+            const node = editor.view.state.doc.nodeAt(pos)
+            if (node) {
+                const tr = editor.view.state.tr
+                tr.delete(pos, pos + node.nodeSize)
+                editor.view.dispatch(tr)
+            }
+        }
+    } else {
+        // Handle drop in editor
+        const editorRect = editor.view.dom.getBoundingClientRect()
+        if (touch.clientX >= editorRect.left &&
+            touch.clientX <= editorRect.right &&
+            touch.clientY >= editorRect.top &&
+            touch.clientY <= editorRect.bottom) {
+
+            const coordinates = editor.view.posAtCoords({
+                left: touch.clientX,
+                top: touch.clientY,
+            })
+
+            if (coordinates) {
+                if (draggedEditorLabel) {
+                    // Moving existing label
+                    const oldPos = editor.view.posAtDOM(draggedEditorLabel, 0)
+                    const node = editor.view.state.doc.nodeAt(oldPos)
+                    if (node) {
+                        const tr = editor.view.state.tr
+                        tr.delete(oldPos, oldPos + node.nodeSize)
+                        tr.insert(coordinates.pos, node.type.create({ text: node.attrs.text }))
+                        editor.view.dispatch(tr)
+                    }
+                } else if (touchedLabel) {
+                    // Adding new label from palette
+                    editor.commands.insertContentAt(coordinates.pos, {
+                        type: 'label',
+                        attrs: { text: touchedLabel.textContent }
+                    })
+                }
+            }
+        }
+    }
+
+    // Clean up
+    touchedLabel.classList.remove('dragging')
+    touchedLabel = null
+    draggedEditorLabel = null
+    trashZone.classList.remove('trash-hover')
 }
 
 // Initialize Tiptap editor
@@ -258,5 +378,26 @@ editorContainer.addEventListener('dragend', (e) => {
         setTimeout(() => {
             draggedEditorLabel = null
         }, 50)
+    }
+})
+
+// Add touch events to editor labels
+editorContainer.addEventListener('touchstart', (e) => {
+    const labelElement = e.target.closest('.editor-label')
+    if (labelElement) {
+        draggedEditorLabel = labelElement
+        handleTouchStart.call(labelElement, e)
+    }
+})
+
+editorContainer.addEventListener('touchmove', (e) => {
+    if (draggedEditorLabel) {
+        handleTouchMove.call(draggedEditorLabel, e)
+    }
+})
+
+editorContainer.addEventListener('touchend', (e) => {
+    if (draggedEditorLabel) {
+        handleTouchEnd.call(draggedEditorLabel, e)
     }
 })
