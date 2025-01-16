@@ -14,12 +14,12 @@ A simple drag and drop editor built with Tiptap that allows users to drag labels
 
 1. Install dependencies:
 ```bash
-npm install
+yarn install
 ```
 
 2. Start the development server:
 ```bash
-npm run dev
+yarn dev
 ```
 
 The application will open automatically in your default browser at `http://localhost:3000`.
