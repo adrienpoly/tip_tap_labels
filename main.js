@@ -1,12 +1,16 @@
 import { Editor } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
-import { Mark } from '@tiptap/core'
-import { TextSelection } from '@tiptap/pm/state'
+import { Node } from '@tiptap/core'
 
-// Create a custom mark for labels
-const LabelMark = Mark.create({
+// Create a custom node for labels
+const LabelNode = Node.create({
     name: 'label',
-    inclusive: false,
+    group: 'inline',
+    inline: true,
+    selectable: false,
+    draggable: true,
+    atom: true,
+
     addAttributes() {
         return {
             text: {
@@ -14,6 +18,7 @@ const LabelMark = Mark.create({
             }
         }
     },
+
     parseHTML() {
         return [
             {
@@ -21,8 +26,12 @@ const LabelMark = Mark.create({
             }
         ]
     },
-    renderHTML({ HTMLAttributes }) {
-        return ['span', { class: 'editor-label', ...HTMLAttributes }, 0]
+
+    renderHTML({ node }) {
+        return ['span', {
+            class: 'editor-label',
+            draggable: 'true',
+        }, node.attrs.text]
     }
 })
 
@@ -33,7 +42,7 @@ const words = [
 ]
 
 let draggedLabel = null
-let touchTimeout = null
+let draggedEditorLabel = null
 
 // Initialize labels
 const labelsContainer = document.querySelector('.labels-container')
@@ -42,141 +51,185 @@ words.forEach(word => {
     label.className = 'label'
     label.draggable = true
     label.textContent = word
-
-    // Mouse events
     label.addEventListener('dragstart', handleDragStart)
     label.addEventListener('dragend', handleDragEnd)
-
-    // Touch events
-    label.addEventListener('touchstart', handleTouchStart)
-    label.addEventListener('touchmove', handleTouchMove)
-    label.addEventListener('touchend', handleTouchEnd)
-
     labelsContainer.appendChild(label)
 })
 
-// Mouse event handlers
+// Create trash zone
+const trashZone = document.createElement('div')
+trashZone.className = 'trash-zone'
+trashZone.innerHTML = '<i class="trash-icon">🗑️</i>'
+document.querySelector('.editor-container').appendChild(trashZone)
+
+// Make trash zone a drop target
+trashZone.addEventListener('dragover', (e) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    trashZone.classList.add('trash-hover')
+})
+
+trashZone.addEventListener('dragleave', () => {
+    trashZone.classList.remove('trash-hover')
+})
+
+trashZone.addEventListener('drop', (e) => {
+    e.preventDefault()
+    trashZone.classList.remove('trash-hover')
+
+    if (draggedEditorLabel) {
+        const pos = editor.view.posAtDOM(draggedEditorLabel, 0)
+        const node = editor.view.state.doc.nodeAt(pos)
+        if (node) {
+            const tr = editor.view.state.tr
+            tr.delete(pos, pos + node.nodeSize)
+            editor.view.dispatch(tr)
+        }
+    }
+    draggedEditorLabel = null
+})
+
 function handleDragStart(e) {
     draggedLabel = e.target
     e.target.classList.add('dragging')
-    e.dataTransfer.setData('text/plain', e.target.textContent)
 }
 
 function handleDragEnd(e) {
-    draggedLabel = null
     e.target.classList.remove('dragging')
-}
-
-// Touch event handlers
-function handleTouchStart(e) {
-    const touch = e.touches[0]
-    draggedLabel = e.target
-    e.target.classList.add('dragging')
-
-    // Create a clone for visual feedback
-    const clone = e.target.cloneNode(true)
-    clone.id = 'dragging-clone'
-    clone.style.position = 'fixed'
-    clone.style.left = touch.clientX - 50 + 'px'
-    clone.style.top = touch.clientY - 25 + 'px'
-    clone.style.opacity = '0.8'
-    clone.style.pointerEvents = 'none'
-    document.body.appendChild(clone)
-}
-
-function handleTouchMove(e) {
-    e.preventDefault() // Prevent scrolling while dragging
-    if (draggedLabel) {
-        const touch = e.touches[0]
-        const clone = document.getElementById('dragging-clone')
-        if (clone) {
-            clone.style.left = touch.clientX - 50 + 'px'
-            clone.style.top = touch.clientY - 25 + 'px'
-        }
-    }
-}
-
-function handleTouchEnd(e) {
-    if (!draggedLabel) return
-
-    const clone = document.getElementById('dragging-clone')
-    if (clone) {
-        clone.remove()
-    }
-
-    const touch = e.changedTouches[0]
-    const editor = document.querySelector('.editor-container')
-    const editorRect = editor.getBoundingClientRect()
-
-    // Check if touch ended over editor
-    if (touch.clientX >= editorRect.left &&
-        touch.clientX <= editorRect.right &&
-        touch.clientY >= editorRect.top &&
-        touch.clientY <= editorRect.bottom) {
-
-        insertLabelAtPosition(draggedLabel.textContent, touch.clientX, touch.clientY)
-    }
-
-    draggedLabel.classList.remove('dragging')
-    draggedLabel = null
-}
-
-// Helper function to insert label
-function insertLabelAtPosition(text, x, y) {
-    const coordinates = editor.view.posAtCoords({
-        left: x,
-        top: y,
-    })
-
-    if (coordinates) {
-        const { tr } = editor.view.state
-        let insertPos = coordinates.pos
-
-        // Insert a space before if not at the start
-        if (insertPos > 0) {
-            tr.insertText(' ', insertPos)
-            insertPos += 1
-        }
-
-        // Insert the label text and mark
-        const labelStart = insertPos
-        tr.insertText(text.trim(), labelStart)
-        tr.addMark(
-            labelStart,
-            labelStart + text.trim().length,
-            editor.view.state.schema.marks.label.create({ text: text.trim() })
-        )
-
-        // Add space after and position cursor
-        const spacePos = labelStart + text.trim().length
-        tr.insertText(' ', spacePos)
-
-        // Set cursor after the space
-        const cursorPos = spacePos + 1
-        const selection = TextSelection.create(tr.doc, cursorPos)
-        tr.setSelection(selection)
-
-        editor.view.dispatch(tr)
-        editor.view.focus()
-    }
+    setTimeout(() => {
+        console.log("end");
+        draggedLabel = null
+        draggedEditorLabel = null
+    }, 50)
 }
 
 // Initialize Tiptap editor
 const editor = new Editor({
     element: document.querySelector('#editor'),
     extensions: [
-        StarterKit,
-        LabelMark
+        StarterKit.configure({
+            history: true,
+        }),
+        LabelNode.configure({
+            HTMLAttributes: {
+                class: 'editor-label',
+                draggable: 'true',
+            }
+        }),
     ],
     content: '<p></p>',
     editorProps: {
         handleDrop: (view, event, slice, moved) => {
             event.preventDefault()
-            if (!moved && draggedLabel) {
-                insertLabelAtPosition(draggedLabel.textContent, event.clientX, event.clientY)
-                return true
+            const trashRect = trashZone.getBoundingClientRect()
+
+            console.log(trashRect, event.clientX, event.clientY);
+            // Check if dropped on trash
+            if (event.clientX >= trashRect.left &&
+                event.clientX <= trashRect.right &&
+                event.clientY >= trashRect.top &&
+                event.clientY <= trashRect.bottom) {
+                try {
+                    if (draggedEditorLabel) {
+                        const tr = view.state.tr
+                        const pos = view.posAtDOM(draggedEditorLabel, 0)
+                        const node = view.state.doc.nodeAt(pos)
+
+                        if (node) {
+                            tr.delete(pos, pos + node.nodeSize)
+                            view.dispatch(tr)
+                        }
+                        draggedEditorLabel = null
+                    }
+                    return true
+                } catch (error) {
+                    console.error('Error during trash:', error)
+                    return false
+                }
             }
-            return false
+
+            const coordinates = view.posAtCoords({
+                left: event.clientX,
+                top: event.clientY,
+            })
+
+            if (!coordinates) return false
+
+            if (draggedEditorLabel) {
+                try {
+                    // Moving existing label
+                    const oldPos = view.posAtDOM(draggedEditorLabel, 0)
+
+                    // Validate position
+                    if (oldPos < 0 || oldPos >= view.state.doc.content.size) {
+                        return false
+                    }
+
+                    const node = view.state.doc.nodeAt(oldPos)
+                    if (!node) {
+                        return false
+                    }
+
+                    const tr = view.state.tr
+
+                    // Get the $pos to check the context
+                    const $pos = tr.doc.resolve(coordinates.pos)
+                    let targetPos = coordinates.pos
+
+                    // Validate target position
+                    if (targetPos < 0) {
+                        targetPos = 0
+                    } else if (targetPos > tr.doc.content.size) {
+                        targetPos = tr.doc.content.size
+                    }
+
+                    // If we're at the end of a block, move back one position
+                    if ($pos.nodeAfter === null && $pos.node().type.name === 'paragraph') {
+                        targetPos = Math.max(0, targetPos - 1)
+                    }
+
+                    // Delete old label only if position is valid
+                    if (oldPos + node.nodeSize <= view.state.doc.content.size) {
+                        tr.delete(oldPos, oldPos + node.nodeSize)
+                    }
+
+                    // Insert at new position
+                    tr.insert(targetPos, node.type.create({ text: node.attrs.text }))
+
+                    view.dispatch(tr)
+                } catch (error) {
+                    console.error('Error during label move:', error)
+                    return false
+                }
+            } else if (draggedLabel) {
+                try {
+                    // Adding new label from palette
+                    const $pos = view.state.doc.resolve(coordinates.pos)
+                    let targetPos = coordinates.pos
+
+                    // Validate target position
+                    if (targetPos < 0) {
+                        targetPos = 0
+                    } else if (targetPos > view.state.doc.content.size) {
+                        targetPos = view.state.doc.content.size
+                    }
+
+                    // If we're at the end of a block, move back one position
+                    if ($pos.nodeAfter === null && $pos.node().type.name === 'paragraph') {
+                        targetPos = Math.max(0, targetPos - 1)
+                    }
+
+                    editor.commands.insertContentAt(targetPos, {
+                        type: 'label',
+                        attrs: { text: draggedLabel.textContent }
+                    })
+                } catch (error) {
+                    console.error('Error during label insert:', error)
+                    return false
+                }
+            }
+
+            return true
         }
     }
 })
@@ -185,23 +238,25 @@ const editor = new Editor({
 const editorContainer = document.querySelector('.editor-container')
 editorContainer.addEventListener('dragover', (e) => {
     e.preventDefault()
-    e.dataTransfer.dropEffect = 'copy'
 })
 
-// Handle label editing
-editor.on('click', ({ editor, event }) => {
-    const labelElement = event.target.closest('.editor-label')
+// Add event delegation for editor labels
+editorContainer.addEventListener('dragstart', (e) => {
+    const labelElement = e.target.closest('.editor-label')
     if (labelElement) {
-        event.preventDefault()
-        const text = window.prompt('Edit label:', labelElement.textContent.trim())
-        if (text !== null) {
-            const pos = editor.view.posAtDOM(labelElement, 0)
-            const endPos = pos + labelElement.textContent.length
-            editor.chain()
-                .focus()
-                .insertContentAt({ from: pos, to: endPos }, text.trim())
-                .setTextSelection(endPos + 1)
-                .run()
-        }
+        console.log('Editor label drag start:', labelElement)
+        draggedEditorLabel = labelElement
+        labelElement.classList.add('dragging')
+    }
+})
+
+editorContainer.addEventListener('dragend', (e) => {
+    const labelElement = e.target.closest('.editor-label')
+    if (labelElement) {
+        labelElement.classList.remove('dragging')
+        // Use a timeout to ensure the drop handler runs first
+        setTimeout(() => {
+            draggedEditorLabel = null
+        }, 50)
     }
 })
