@@ -18,6 +18,7 @@
     "@tiptap/starter-kit": "^2.11.2"
   },
   "devDependencies": {
+    "@playwright/test": "^1.49.1",
     "vite": "^6.0.7"
   }
 }
