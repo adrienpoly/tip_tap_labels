@@ -1,0 +1,23 @@
+{
+  "name": "tip_tap_labels",
+  "version": "1.0.0",
+  "description": "A drag and drop editor with labels using Tiptap",
+  "main": "main.js",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@tiptap/core": "^2.11.2",
+    "@tiptap/pm": "^2.11.2",
+    "@tiptap/starter-kit": "^2.11.2"
+  },
+  "devDependencies": {
+    "vite": "^6.0.7"
+  }
+}
